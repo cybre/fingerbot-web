@@ -1,0 +1,22 @@
+version: '3.8'
+
+services:
+  web:
+    image: fingerbot-web:latest
+    restart: unless-stopped
+    network_mode: host
+    env_file: ".env.docker"
+    privileged: true
+    build:
+      context: .
+      dockerfile: Dockerfile
+  ngrok:
+    image: ngrok/ngrok:latest
+    restart: unless-stopped
+    network_mode: host
+    command:
+      - "http"
+      - "--url=${NGROK_URL}"
+      - ${SERVICE_PORT}
+    environment:
+      NGROK_AUTHTOKEN: ${NGROK_AUTHTOKEN}
