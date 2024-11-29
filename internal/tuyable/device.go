@@ -27,8 +27,10 @@ const (
 	GattMTU = 20
 
 	// https://developer.tuya.com/en/docs/iot-device-dev/tuya-ble-sdk-user-guide?id=K9h5zc4e5djd9#title-5-The%20concepts%20of%20tuya%20ble%20service
-	CharacteristicNotifyUUID = "2b10"
-	CharacteristicWriteUUID  = "2b11"
+	CharacteristicNotifyUUID = "00002b10-0000-1000-8000-00805f9b34fb"
+	CharacteristicWriteUUID  = "00002b11-0000-1000-8000-00805f9b34fb"
+	ServiceUUID              = "0000a201-0000-1000-8000-00805f9b34fb"
+	ManufacturerID           = 0x07D0
 )
 
 // Device represents a Tuya BLE device
