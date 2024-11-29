@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"errors"
-	"fmt"
 	"log"
 	"log/slog"
 	"net/http"
@@ -14,8 +13,6 @@ import (
 	"github.com/golang-cz/devslog"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
-	tuyadevice "github.com/tuya/tuya-cloud-sdk-go/api/device"
-	tuyaconfig "github.com/tuya/tuya-cloud-sdk-go/config"
 
 	"github.com/cybre/fingerbot-web/internal/config"
 	"github.com/cybre/fingerbot-web/internal/logging"
@@ -52,12 +49,9 @@ func main() {
 
 	ctx = logging.Context(ctx, logger)
 
-	uuid, localKey, err := getTuyaDeviceInformation(config)
-	if err != nil {
-		log.Fatalf("Failed to get Tuya device information: %v", err)
-	}
+	logger.Info("Device configuration", slog.Any("config", config.Device))
 
-	device, err := tuyable.NewDevice(config.DeviceAddress, uuid, config.DeviceID, localKey, logger)
+	device, err := tuyable.NewDevice(config.DeviceAddress, config.DeviceUUID, config.DeviceID, config.DeviceLocalKey, logger)
 	if err != nil {
 		log.Fatalf("Failed to create device instance: %v", err)
 	}
@@ -127,14 +121,4 @@ func main() {
 	if err := e.Shutdown(ctx); err != nil {
 		log.Fatalf("error shutting down server: %s", err)
 	}
-}
-
-func getTuyaDeviceInformation(config *config.Config) (string, string, error) {
-	tuyaconfig.SetEnv(config.TuyaCloudURL, config.TuyaCloudAccessID, config.TuyaCloudAccessKey)
-	device, err := tuyadevice.GetDevice(config.DeviceID)
-	if err != nil {
-		return "", "", fmt.Errorf("error getting device information: %w", err)
-	}
-
-	return device.Result.UUID, device.Result.LocalKey, nil
 }
