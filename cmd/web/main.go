@@ -51,20 +51,20 @@ func main() {
 
 	logger.Info("Device configuration", slog.Any("config", config.Device))
 
-	device, err := tuyable.NewDevice(config.DeviceAddress, config.DeviceUUID, config.DeviceID, config.DeviceLocalKey, logger)
-	if err != nil {
-		log.Fatalf("Failed to create device instance: %v", err)
-	}
-	if err := device.Connect(ctx); err != nil {
-		log.Fatalf("Failed to connect to device: %v", err)
-	}
-	defer device.Disconnect()
-	if err := device.Pair(); err != nil {
-		log.Fatalf("Failed to pair with device: %v", err)
-	}
+	// device, err := tuyable.NewDevice(config.DeviceAddress, config.DeviceUUID, config.DeviceID, config.DeviceLocalKey, logger)
+	// if err != nil {
+	// log.Fatalf("Failed to create device instance: %v", err)
+	// }
+	// if err := device.Connect(ctx); err != nil {
+	// 	log.Fatalf("Failed to connect to device: %v", err)
+	// }
+	// defer device.Disconnect()
+	// if err := device.Pair(); err != nil {
+	// 	log.Fatalf("Failed to pair with device: %v", err)
+	// }
 
-	fingerbot := fingerbot.NewFingerbot(device)
-	application := webapp.NewWebApp(fingerbot)
+	fingerbot := fingerbot.NewFingerbot(nil)
+	application := webapp.NewWebApp(tuyable.NewDeviceManager(), fingerbot)
 	e := echo.New()
 	e.Renderer = application
 	e.Use(middleware.Recover())

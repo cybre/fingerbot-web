@@ -7,15 +7,15 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/cybre/fingerbot-web/internal/devicemanager"
+	"github.com/cybre/fingerbot-web/internal/tuyable"
 )
 
 func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
-	output := make(chan devicemanager.DiscoveredDevice, 100)
-	devicemanager := devicemanager.NewDeviceManager()
+	output := make(chan tuyable.DiscoveredDevice, 100)
+	devicemanager := tuyable.NewDeviceManager()
 	go func() {
 		if err := devicemanager.Scan(ctx, output); err != nil {
 			panic(err)

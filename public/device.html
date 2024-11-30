@@ -1,0 +1,6 @@
+<div class="device-item">
+  <div class="device-info">
+    <span class="device-name">{{if eq .LocalName "" }}Unknown device{{else}}{{.LocalName}}{{end}}</span>
+    <span class="device-mac">{{.Address.String}}</span>
+  </div>
+</div>

@@ -1,4 +1,4 @@
-package devicemanager
+package tuyable
 
 import (
 	"context"
@@ -8,9 +8,13 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/cybre/fingerbot-web/internal/tuyable"
 	"github.com/cybre/fingerbot-web/internal/utils"
 	"tinygo.org/x/bluetooth"
+)
+
+const (
+	ServiceUUID    = "0000a201-0000-1000-8000-00805f9b34fb"
+	ManufacturerID = 0x07D0
 )
 
 var adapter = bluetooth.DefaultAdapter
@@ -25,7 +29,7 @@ type DiscoveredDevice struct {
 }
 
 type DeviceManager struct {
-	devices map[string]*tuyable.Device
+	devices map[string]*Device
 }
 
 func NewDeviceManager() *DeviceManager {
@@ -37,6 +41,7 @@ func (dm *DeviceManager) Scan(ctx context.Context, output chan<- DiscoveredDevic
 		return fmt.Errorf("error enabling bluetooth adapter: %w", err)
 	}
 
+	scanned := map[string]struct{}{}
 	if err := adapter.Scan(func(a *bluetooth.Adapter, sr bluetooth.ScanResult) {
 		select {
 		case <-ctx.Done():
@@ -46,8 +51,12 @@ func (dm *DeviceManager) Scan(ctx context.Context, output chan<- DiscoveredDevic
 			}
 		default:
 		}
+		if _, ok := scanned[sr.Address.String()]; ok {
+			return
+		}
+
 		service, ok := utils.Find(sr.ServiceData(), func(element bluetooth.ServiceDataElement) bool {
-			return element.UUID.String() == tuyable.ServiceUUID
+			return element.UUID.String() == ServiceUUID
 		})
 		if !ok {
 			return
@@ -59,7 +68,7 @@ func (dm *DeviceManager) Scan(ctx context.Context, output chan<- DiscoveredDevic
 		rawProductId := service.Data[1:]
 
 		manufacturerData, ok := utils.Find(sr.ManufacturerData(), func(element bluetooth.ManufacturerDataElement) bool {
-			return element.CompanyID == tuyable.ManufacturerID
+			return element.CompanyID == ManufacturerID
 		})
 		if !ok || len(manufacturerData.Data) <= 6 {
 			return
@@ -85,6 +94,7 @@ func (dm *DeviceManager) Scan(ctx context.Context, output chan<- DiscoveredDevic
 			UUID:            bluetooth.NewUUID([16]byte(decrypted)),
 		}
 
+		scanned[sr.Address.String()] = struct{}{}
 	}); err != nil {
 		return fmt.Errorf("error scanning: %w", err)
 	}
