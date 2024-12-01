@@ -2,10 +2,12 @@ package webapp
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"html/template"
 	"io"
 	"net/http"
+	"time"
 
 	"github.com/cybre/fingerbot-web/internal/tuyable"
 	"github.com/cybre/fingerbot-web/internal/tuyable/fingerbot"
@@ -54,7 +56,9 @@ func (a *WebApp) handleScan(c echo.Context) error {
 
 	output := make(chan tuyable.DiscoveredDevice)
 	go func() {
-		if err := a.deviceManager.Scan(c.Request().Context(), output); err != nil {
+		ctx, cancel := context.WithTimeout(c.Request().Context(), 30*time.Second)
+		defer cancel()
+		if err := a.deviceManager.Scan(ctx, output); err != nil {
 			panic(err)
 		}
 
@@ -67,13 +71,23 @@ func (a *WebApp) handleScan(c echo.Context) error {
 			return fmt.Errorf("failed to render device: %w", err)
 		}
 		event := Event{
-			Data: buff.Bytes(),
+			Event: []byte("device"),
+			Data:  buff.Bytes(),
 		}
 		if err := event.MarshalTo(w); err != nil {
 			return fmt.Errorf("failed to marshal event: %w", err)
 		}
 		w.Flush()
 	}
+
+	closeEvent := Event{
+		Event: []byte("finished"),
+		Data:  []byte("Scan finished"),
+	}
+	if err := closeEvent.MarshalTo(w); err != nil {
+		return fmt.Errorf("failed to marshal close event: %w", err)
+	}
+	w.Flush()
 
 	return nil
 }

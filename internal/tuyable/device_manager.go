@@ -24,8 +24,7 @@ type DiscoveredDevice struct {
 	Address         bluetooth.Address
 	IsBound         bool
 	ProtocolVersion byte
-	RawUUID         []byte
-	UUID            bluetooth.UUID
+	UUID            []byte
 }
 
 type DeviceManager struct {
@@ -90,8 +89,7 @@ func (dm *DeviceManager) Scan(ctx context.Context, output chan<- DiscoveredDevic
 			Address:         sr.Address,
 			IsBound:         (manufacturerData.Data[0] & 0x80) != 0,
 			ProtocolVersion: manufacturerData.Data[1],
-			RawUUID:         decrypted,
-			UUID:            bluetooth.NewUUID([16]byte(decrypted)),
+			UUID:            decrypted,
 		}
 
 		scanned[sr.Address.String()] = struct{}{}

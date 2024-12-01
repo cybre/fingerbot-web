@@ -232,7 +232,7 @@
       <a href="/" class="btn btn-outline-primary"><i class="fas fa-home"></i> Home</a>
     </div>
 
-    <div class="device-list" hx-ext="sse" sse-connect="/scan" sse-swap="message" hx-swap="beforeend append">
+    <div class="device-list" hx-ext="sse" sse-connect="/scan" sse-swap="device" hx-swap="beforeend append" sse-close="finished">
     </div>
   </div>
 </body>

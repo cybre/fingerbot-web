@@ -33,8 +33,7 @@ func main() {
 			"address", device.Address.String(),
 			"isBound", device.IsBound,
 			"protocolVersion", device.ProtocolVersion,
-			"raw_uuid", string(device.RawUUID),
-			"uuid", device.UUID.String(),
+			"uuid", string(device.UUID),
 		)
 	}
 }
