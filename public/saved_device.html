@@ -2,14 +2,23 @@
     <div class="device-info">
         <span class="device-name">{{.Name}}</span>
         <span class="device-mac">{{.Address}}</span>
-        <span class="device-rssi">{{.RSSI}} dBm</span>
+        {{if not .Connected}}<span class="device-rssi">{{.RSSI}} dBm</span>{{end}}
     </div>
     {{if .Connected}}
-    <button class="btn-disconnect" hx-post="/devices/{{.Address}}/disconnect">Disconnect</button>
+    <button class="btn-disconnect" hx-post="/devices/{{.Address}}/disconnect" id="disconnect-{{.ID}}" hx-preserve>
+        <span class="spinner spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>
+        Disconnect
+    </button>
     {{else}}
-    <div>
-        <button class="btn-connect" hx-post="/devices/{{.Address}}/connect">Connect</button>
-        <button class="btn-forget">Forget</button>
+    <div id="actions-{{.ID}}" hx-preserve class="device-actions">
+        <button class="btn-connect" hx-post="/devices/{{.Address}}/connect">
+            <span class="spinner spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>
+            Connect
+        </button>
+        <button class="btn-forget" hx-post="/devices/{{.Address}}/forget">
+            <span class="spinner spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>
+            Forget
+        </button>
     </div>
     {{end}}
 </div>

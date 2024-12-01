@@ -10,7 +10,6 @@ type Device struct {
 	Address  string `sql:"address"`
 	DeviceID string `sql:"device_id"`
 	Name     string `sql:"name"`
-	Slug     string `sql:"slug"`
 	LocalKey string `sql:"local_key"`
 	UUID     string `sql:"uuid"`
 }
@@ -34,7 +33,6 @@ func (r *Repository) init() error {
 			address TEXT PRIMARY KEY,
 			device_id TEXT,
 			name TEXT NOT NULL,
-			slug TEXT NOT NULL,
 			local_key TEXT NOT NULL,
 			uuid TEXT NOT NULL
 		)
@@ -48,10 +46,20 @@ func (r *Repository) init() error {
 func (r *Repository) CreateDevice(ctx context.Context, d Device) error {
 	if _, err := r.db.ExecContext(
 		ctx,
-		"INSERT INTO devices (address, device_id, name, slug, local_key, uuid) VALUES ($1, $2, $3, $4, $5, $6)",
-		d.Address, d.DeviceID, d.Name, d.Slug, d.LocalKey, d.UUID,
+		"INSERT INTO devices (address, device_id, name, local_key, uuid) VALUES ($1, $2, $3, $4, $5)",
+		d.Address, d.DeviceID, d.Name, d.LocalKey, d.UUID,
 	); err != nil {
 		return fmt.Errorf("error creating device: %w", err)
+	}
+
+	return nil
+}
+
+func (r *Repository) DeleteDevice(ctx context.Context, address string) error {
+	if _, err := r.db.ExecContext(
+		ctx, "DELETE FROM devices WHERE address = $1", address,
+	); err != nil {
+		return fmt.Errorf("error deleting device: %w", err)
 	}
 
 	return nil
@@ -61,7 +69,7 @@ func (r *Repository) GetDevice(ctx context.Context, address string) (*Device, er
 	var d Device
 	err := r.db.QueryRowContext(
 		ctx, "SELECT * FROM devices WHERE address = $1", address,
-	).Scan(&d.Address, &d.DeviceID, &d.Name, &d.Slug, &d.LocalKey, &d.UUID)
+	).Scan(&d.Address, &d.DeviceID, &d.Name, &d.LocalKey, &d.UUID)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil
@@ -82,7 +90,7 @@ func (r *Repository) GetDevices(ctx context.Context) ([]Device, error) {
 	var devices []Device
 	for rows.Next() {
 		var d Device
-		if err := rows.Scan(&d.Address, &d.DeviceID, &d.Name, &d.Slug, &d.LocalKey, &d.UUID); err != nil {
+		if err := rows.Scan(&d.Address, &d.DeviceID, &d.Name, &d.LocalKey, &d.UUID); err != nil {
 			return nil, fmt.Errorf("error scanning device: %w", err)
 		}
 

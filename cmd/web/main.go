@@ -61,9 +61,9 @@ func main() {
 
 	deviceManager := devices.NewManager(devices.NewRepository(db), tuyable.NewDiscoverer(), logger)
 
-	// if err := deviceManager.ConnectToSavedDevices(ctx); err != nil {
-	// 	log.Fatalf("error connecting to existing devices: %s", err)
-	// }
+	if err := deviceManager.ConnectToSavedDevices(ctx); err != nil {
+		log.Fatalf("error connecting to existing devices: %s", err)
+	}
 
 	application := webapp.NewWebApp(deviceManager)
 	e := echo.New()

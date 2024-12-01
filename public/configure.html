@@ -347,7 +347,7 @@
       };
 
       spinner.classList.remove('d-none');
-      fetch('/configure', {
+      fetch('/devices/{{.ID}}/configure', {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json'
@@ -355,7 +355,7 @@
         body: JSON.stringify(config)
       }).then(response => {
         if (response.ok) {
-          window.location.href = '/';
+          window.location.href = '/devices/{{.ID}}';
         } else {
           alert('Failed to save configuration!');
         }
@@ -369,7 +369,7 @@
 
     function handleCancel() {
       if (confirm('Are you sure you want to cancel? Unsaved changes will be lost.')) {
-        window.location.href = '/';
+        window.location.href = '/devices/{{.ID}}';
       }
     }
   </script>

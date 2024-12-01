@@ -43,6 +43,11 @@ func NewDiscoverer() *Discoverer {
 }
 
 func (dm *Discoverer) Discover(ctx context.Context, output chan<- DiscoveredDevice) error {
+	adapter := *bluetooth.DefaultAdapter
+	if err := adapter.Enable(); err != nil {
+		return fmt.Errorf("error enabling adapter: %w", err)
+	}
+
 	if err := adapter.Scan(func(a *bluetooth.Adapter, sr bluetooth.ScanResult) {
 		select {
 		case <-ctx.Done():

@@ -171,3 +171,7 @@ func (c *Fingerbot) BatteryPercent() int32 {
 
 	return dp.Value.(int32)
 }
+
+func (c *Fingerbot) ID() string {
+	return c.GetAddress()
+}

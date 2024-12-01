@@ -95,6 +95,11 @@ func NewDevice(address, uuid, deviceID, localKey string, logger *slog.Logger) (*
 
 // Connect connects to the Tuya BLE device
 func (d *Device) Connect(ctx context.Context) error {
+	adapter := *bluetooth.DefaultAdapter
+	if err := adapter.Enable(); err != nil {
+		return fmt.Errorf("error enabling bluetooth adapter: %w", err)
+	}
+
 	d.logger.Info("Connecting to device...")
 	device, err := adapter.Connect(d.address, bluetooth.ConnectionParams{
 		ConnectionTimeout: bluetooth.NewDuration(BLEConnectTimeout),
@@ -260,6 +265,11 @@ func (d *Device) SetDatapoints(datapoints []DataPoint) error {
 	}
 
 	return nil
+}
+
+// GetAddress returns the device address
+func (d *Device) GetAddress() string {
+	return d.address.String()
 }
 
 // handleNotification processes incoming notifications from the device

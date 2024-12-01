@@ -169,10 +169,10 @@
   </div>
 
   <div class="container">
-    <button type="button" class="btn-toggle" id="activateButton" aria-label="Activate" hx-put="/toggle" hx-swap="none">
+    <button type="button" class="btn-toggle" id="activateButton" aria-label="Activate" hx-put="/devices/{{.ID}}/toggle" hx-swap="none">
       <span class="btn-text">Activate</span>
     </button>
-    <a href="/configure" hx-swap="body" class="btn btn-secondary btn-configure">
+    <a href="/devices/{{.ID}}/configure" hx-swap="body" class="btn btn-secondary btn-configure">
       Configure
     </a>
   </div>
@@ -207,7 +207,7 @@
       }
 
       function fetchBatteryStatus() {
-        fetch('/battery-status').then(function (response) {
+        fetch('/devices/{{.ID}}/battery-status').then(function (response) {
           if (!response.ok) {
             throw new Error('Network response was not ok');
           }

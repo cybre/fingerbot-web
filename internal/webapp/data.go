@@ -6,15 +6,18 @@ import (
 
 type IndexData struct {
 	BatteryStatus BatteryStatusData
+	ID            string
 }
 
 func NewIndexData(device *fingerbot.Fingerbot) IndexData {
 	return IndexData{
 		BatteryStatus: NewBatteryStatusData(device),
+		ID:            device.ID(),
 	}
 }
 
 type ConfigurationData struct {
+	ID               string `json:"id"`
 	Mode             uint32 `json:"mode"`
 	ClickSustainTime int32  `json:"clickSustainTime"`
 	ControlBack      uint32 `json:"controlBack"`
@@ -24,6 +27,7 @@ type ConfigurationData struct {
 
 func NewConfigurationData(device *fingerbot.Fingerbot) ConfigurationData {
 	return ConfigurationData{
+		ID:               device.ID(),
 		Mode:             uint32(device.Mode()),
 		ClickSustainTime: device.ClickSustainTime(),
 		ControlBack:      uint32(device.ControlBack()),
@@ -48,6 +52,5 @@ type ConnectDeviceRequest struct {
 	Address  string `form:"address"`
 	DeviceID string `form:"deviceId"`
 	Name     string `form:"name"`
-	Slug     string `form:"slug"`
 	LocalKey string `form:"localKey"`
 }

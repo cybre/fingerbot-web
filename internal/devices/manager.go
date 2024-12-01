@@ -12,6 +12,18 @@ import (
 	"github.com/cybre/fingerbot-web/internal/utils"
 )
 
+type DeviceView struct {
+	Name      string
+	Address   string
+	RSSI      int16
+	Saved     bool
+	Connected bool
+}
+
+func (d DeviceView) ID() string {
+	return strings.ReplaceAll(d.Address, ":", "")
+}
+
 type Manager struct {
 	repository      *Repository
 	discoverer      *tuyable.Discoverer
@@ -35,7 +47,6 @@ func (m *Manager) ConnectToSavedDevices(ctx context.Context) error {
 	}
 
 	for _, device := range devices {
-		m.logger.Info("connecting to device", slog.Any("device", device))
 		if err := m.connectDevice(ctx, device); err != nil {
 			m.logger.Error("failed to connect to device", slog.Any("device", device), slog.Any("error", err))
 		}
@@ -47,7 +58,6 @@ func (m *Manager) ConnectToSavedDevices(ctx context.Context) error {
 type DeviceConnection struct {
 	Address  string `json:"address" form:"address"`
 	Name     string `json:"name" form:"name"`
-	Slug     string `json:"slug" form:"slug"`
 	DeviceID string `json:"deviceId" form:"deviceId"`
 	LocalKey string `json:"localKey" form:"localKey"`
 }
@@ -56,9 +66,6 @@ func (m *Manager) ConnectToSavedDevice(ctx context.Context, address string) (*De
 	device, err := m.repository.GetDevice(ctx, address)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get device: %w", err)
-	}
-	if device == nil {
-		return nil, fmt.Errorf("device not found: %s", address)
 	}
 
 	if err := m.connectDevice(ctx, *device); err != nil {
@@ -84,7 +91,6 @@ func (m *Manager) Connect(ctx context.Context, conn DeviceConnection) (*DeviceVi
 		DeviceID: conn.DeviceID,
 		Address:  discoveredDevice.Address,
 		Name:     conn.Name,
-		Slug:     conn.Slug,
 		LocalKey: conn.LocalKey,
 		UUID:     string(discoveredDevice.UUID),
 	}
@@ -104,18 +110,6 @@ func (m *Manager) Connect(ctx context.Context, conn DeviceConnection) (*DeviceVi
 		Saved:     true,
 		Connected: true,
 	}, nil
-}
-
-type DeviceView struct {
-	Name      string
-	Address   string
-	RSSI      int16
-	Saved     bool
-	Connected bool
-}
-
-func (d DeviceView) ID() string {
-	return strings.ReplaceAll(d.Address, ":", "")
 }
 
 func (m *Manager) Discover(ctx context.Context, output chan<- DeviceView) error {
@@ -148,8 +142,7 @@ func (m *Manager) Discover(ctx context.Context, output chan<- DeviceView) error 
 		if saved != nil {
 			device.Name = saved.Name
 			device.Saved = true
-			device.Connected = m.conectedDevices[saved.Slug] != nil
-			fmt.Printf("device: %v\n", device)
+			device.Connected = m.conectedDevices[saved.Address] != nil
 		}
 
 		output <- device
@@ -158,8 +151,8 @@ func (m *Manager) Discover(ctx context.Context, output chan<- DeviceView) error 
 	return nil
 }
 
-func (m *Manager) GetDevice(slug string) *fingerbot.Fingerbot {
-	return m.conectedDevices[slug]
+func (m *Manager) GetFingerbot(address string) *fingerbot.Fingerbot {
+	return m.conectedDevices[address]
 }
 
 func (m *Manager) GetSavedDevices(ctx context.Context) ([]DeviceView, error) {
@@ -174,7 +167,7 @@ func (m *Manager) GetSavedDevices(ctx context.Context) ([]DeviceView, error) {
 			Address:   device.Address,
 			RSSI:      0,
 			Saved:     true,
-			Connected: m.conectedDevices[device.Slug] != nil,
+			Connected: m.conectedDevices[device.Address] != nil,
 		}
 	}), nil
 }
@@ -188,11 +181,11 @@ func (m *Manager) DisconnectDevice(ctx context.Context, address string) (*Device
 		return nil, fmt.Errorf("device not found: %s", address)
 	}
 
-	if err := m.GetDevice(device.Slug).Disconnect(); err != nil {
+	if err := m.GetFingerbot(device.Address).Disconnect(); err != nil {
 		return nil, fmt.Errorf("failed to disconnect device: %w", err)
 	}
 
-	delete(m.conectedDevices, device.Slug)
+	delete(m.conectedDevices, device.Address)
 
 	return &DeviceView{
 		Name:      device.Name,
@@ -201,6 +194,22 @@ func (m *Manager) DisconnectDevice(ctx context.Context, address string) (*Device
 		Saved:     true,
 		Connected: false,
 	}, nil
+}
+
+func (m *Manager) ForgetDevice(ctx context.Context, address string) error {
+	if err := m.repository.DeleteDevice(ctx, address); err != nil {
+		return fmt.Errorf("failed to delete device: %w", err)
+	}
+
+	return nil
+}
+
+func (m *Manager) DisconnectDevices() {
+	for _, device := range m.conectedDevices {
+		if err := device.Disconnect(); err != nil {
+			m.logger.Error("failed to disconnect device", slog.Any("error", err))
+		}
+	}
 }
 
 func (m *Manager) connectDevice(ctx context.Context, device Device) error {
@@ -217,15 +226,7 @@ func (m *Manager) connectDevice(ctx context.Context, device Device) error {
 		return err
 	}
 
-	m.conectedDevices[device.Slug] = fingerbot.NewFingerbot(tuyadevice)
+	m.conectedDevices[device.Address] = fingerbot.NewFingerbot(tuyadevice)
 
 	return nil
-}
-
-func (m *Manager) DisconnectDevices() {
-	for _, device := range m.conectedDevices {
-		if err := device.Disconnect(); err != nil {
-			m.logger.Error("failed to disconnect device", slog.Any("error", err))
-		}
-	}
 }
