@@ -17,7 +17,7 @@ const (
 	ManufacturerID = 0x07D0
 )
 
-var ServiceUUID = utils.Must(bluetooth.ParseUUID("0000a201-0000-1000-8000-00805f9b34fb"))
+var ServiceUUID = bluetooth.New16BitUUID(0xa201)
 
 type DiscoveredDevice struct {
 	LocalName       string
@@ -42,13 +42,14 @@ func NewDiscoverer() *Discoverer {
 	}
 }
 
-func (dm *Discoverer) Discover(ctx context.Context, output chan<- DiscoveredDevice) error {
-	adapter := *bluetooth.DefaultAdapter
-	if err := adapter.Enable(); err != nil {
-		return fmt.Errorf("error enabling adapter: %w", err)
-	}
+func (dm *Discoverer) StopDiscovery() error {
+	return bluetooth.DefaultAdapter.StopScan()
+}
 
-	if err := adapter.Scan(func(a *bluetooth.Adapter, sr bluetooth.ScanResult) {
+func (dm *Discoverer) Discover(ctx context.Context, output chan<- DiscoveredDevice) error {
+	bluetooth.DefaultAdapter.StopScan()
+
+	if err := bluetooth.DefaultAdapter.Scan(func(a *bluetooth.Adapter, sr bluetooth.ScanResult) {
 		select {
 		case <-ctx.Done():
 			if err := a.StopScan(); err != nil {
@@ -59,7 +60,7 @@ func (dm *Discoverer) Discover(ctx context.Context, output chan<- DiscoveredDevi
 		}
 
 		service, ok := utils.Find(sr.ServiceData(), func(element bluetooth.ServiceDataElement) bool {
-			return element.UUID.String() == ServiceUUID.String()
+			return element.UUID == ServiceUUID
 		})
 		if !ok {
 			return

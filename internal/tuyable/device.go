@@ -12,7 +12,6 @@ import (
 
 	"github.com/cybre/fingerbot-web/internal/logging"
 	"github.com/cybre/fingerbot-web/internal/tuyable/packet"
-	"github.com/cybre/fingerbot-web/internal/utils"
 	"tinygo.org/x/bluetooth"
 )
 
@@ -29,8 +28,8 @@ const (
 
 var (
 	// https://developer.tuya.com/en/docs/iot-device-dev/tuya-ble-sdk-user-guide?id=K9h5zc4e5djd9#title-5-The%20concepts%20of%20tuya%20ble%20service
-	CharacteristicNotifyUUID = utils.Must(bluetooth.ParseUUID("00002b10-0000-1000-8000-00805f9b34fb"))
-	CharacteristicWriteUUID  = utils.Must(bluetooth.ParseUUID("00002b11-0000-1000-8000-00805f9b34fb"))
+	CharacteristicNotifyUUID = bluetooth.New16BitUUID(0x2b10)
+	CharacteristicWriteUUID  = bluetooth.New16BitUUID(0x2b11)
 )
 
 // Device represents a Tuya BLE device
@@ -88,20 +87,15 @@ func NewDevice(address, uuid, deviceID, localKey string, logger *slog.Logger) (*
 		responseCh:      make(map[uint32]chan []byte),
 		protocolVersion: 3, // Default protocol version
 		datapoints:      make(map[byte]DataPoint),
-		logger:          logger.With("component", "Device"),
+		logger:          logger.With("component", "Device", "address", address),
 		assembler:       packet.NewAssemmbler(logger.With("component", "Assembler")),
 	}, nil
 }
 
 // Connect connects to the Tuya BLE device
 func (d *Device) Connect(ctx context.Context) error {
-	adapter := *bluetooth.DefaultAdapter
-	if err := adapter.Enable(); err != nil {
-		return fmt.Errorf("error enabling bluetooth adapter: %w", err)
-	}
-
 	d.logger.Info("Connecting to device...")
-	device, err := adapter.Connect(d.address, bluetooth.ConnectionParams{
+	device, err := bluetooth.DefaultAdapter.Connect(d.address, bluetooth.ConnectionParams{
 		ConnectionTimeout: bluetooth.NewDuration(BLEConnectTimeout),
 	})
 	if err != nil {
@@ -123,10 +117,10 @@ func (d *Device) Connect(ctx context.Context) error {
 		}
 
 		for _, char := range chars {
-			switch char.UUID().String() {
-			case CharacteristicWriteUUID.String():
+			switch char.UUID() {
+			case CharacteristicWriteUUID:
 				d.charWrite = &char
-			case CharacteristicNotifyUUID.String():
+			case CharacteristicNotifyUUID:
 				d.charNotify = &char
 			}
 		}
@@ -149,7 +143,7 @@ func (d *Device) Connect(ctx context.Context) error {
 func (d *Device) Disconnect() error {
 	if d.device != nil {
 		d.isConnected = false
-		d.logger.Info("Disconnecting from device...", slog.Any("address", d.address))
+		d.logger.Info("Disconnecting from device...")
 		if err := d.charNotify.EnableNotifications(nil); err != nil {
 			return fmt.Errorf("error disabling notifications: %w", err)
 		}

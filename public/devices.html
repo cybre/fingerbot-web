@@ -345,7 +345,7 @@
       <a href="/" class="btn btn-outline-primary"><i class="bi bi-house"></i> Home</a>
     </div>
 
-    <div class="device-list" hx-ext="sse,oob-if-exists" sse-connect="/discover" sse-swap="device" hx-swap="beforeend">
+    <div class="device-list" hx-ext="sse,oob-if-exists" sse-connect="/discover" sse-swap="device" hx-swap="beforeend" sse-close="finished">
       {{range .}}
       {{ template "saved_device.html" . }}
       {{end}}

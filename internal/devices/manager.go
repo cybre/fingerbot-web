@@ -213,6 +213,8 @@ func (m *Manager) DisconnectDevices() {
 }
 
 func (m *Manager) connectDevice(ctx context.Context, device Device) error {
+	m.discoverer.StopDiscovery()
+
 	tuyadevice, err := tuyable.NewDevice(device.Address, device.UUID, device.DeviceID, device.LocalKey, m.logger)
 	if err != nil {
 		return err
