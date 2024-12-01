@@ -12,8 +12,8 @@ import (
 
 	"github.com/cybre/fingerbot-web/internal/logging"
 	"github.com/cybre/fingerbot-web/internal/tuyable/packet"
-	"github.com/go-ble/ble"
-	"github.com/go-ble/ble/linux"
+	"github.com/cybre/fingerbot-web/internal/utils"
+	"tinygo.org/x/bluetooth"
 )
 
 const (
@@ -25,19 +25,20 @@ const (
 	// GattMTU is the maximum size of a GATT packet
 	// https://developer.tuya.com/en/docs/iot-device-dev/tuya-ble-sdk-user-guide?id=K9h5zc4e5djd9#title-6-MTU
 	GattMTU = 20
+)
 
+var (
 	// https://developer.tuya.com/en/docs/iot-device-dev/tuya-ble-sdk-user-guide?id=K9h5zc4e5djd9#title-5-The%20concepts%20of%20tuya%20ble%20service
-	CharacteristicNotifyUUID = "00002b10-0000-1000-8000-00805f9b34fb"
-	CharacteristicWriteUUID  = "00002b11-0000-1000-8000-00805f9b34fb"
+	CharacteristicNotifyUUID = utils.Must(bluetooth.ParseUUID("00002b10-0000-1000-8000-00805f9b34fb"))
+	CharacteristicWriteUUID  = utils.Must(bluetooth.ParseUUID("00002b11-0000-1000-8000-00805f9b34fb"))
 )
 
 // Device represents a Tuya BLE device
 type Device struct {
-	device            ble.Device
-	client            ble.Client
-	address           ble.Addr
-	charWrite         *ble.Characteristic
-	charNotify        *ble.Characteristic
+	device            *bluetooth.Device
+	address           bluetooth.Address
+	charWrite         *bluetooth.DeviceCharacteristic
+	charNotify        *bluetooth.DeviceCharacteristic
 	localKey          []byte
 	loginKey          []byte
 	sessionKey        []byte
@@ -62,12 +63,6 @@ type Device struct {
 
 // NewDevice creates a new Device instance
 func NewDevice(address, uuid, deviceID, localKey string, logger *slog.Logger) (*Device, error) {
-	d, err := linux.NewDevice()
-	if err != nil {
-		return nil, fmt.Errorf("error creating BLE device: %w", err)
-	}
-	ble.SetDefaultDevice(d)
-
 	localKeyBytes := []byte(localKey)
 	if len(localKeyBytes) < 6 {
 		return nil, fmt.Errorf("localKey must be at least 6 bytes")
@@ -77,10 +72,14 @@ func NewDevice(address, uuid, deviceID, localKey string, logger *slog.Logger) (*
 		logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	}
 
+	mac, err := bluetooth.ParseMAC(address)
+	if err != nil {
+		return nil, fmt.Errorf("error parsing MAC address: %w", err)
+	}
+
 	loginKey := md5.Sum(localKeyBytes[:6]) // Use first 6 bytes for loginKey
 	return &Device{
-		device:          d,
-		address:         ble.NewAddr(address),
+		address:         bluetooth.Address{MACAddress: bluetooth.MACAddress{MAC: mac}},
 		uuid:            uuid,
 		deviceID:        deviceID,
 		localKey:        localKeyBytes[:6],
@@ -97,26 +96,33 @@ func NewDevice(address, uuid, deviceID, localKey string, logger *slog.Logger) (*
 // Connect connects to the Tuya BLE device
 func (d *Device) Connect(ctx context.Context) error {
 	d.logger.Info("Connecting to device...")
-	client, err := ble.Dial(ble.WithSigHandler(context.WithTimeout(ctx, BLEConnectTimeout)), d.address)
+	device, err := adapter.Connect(d.address, bluetooth.ConnectionParams{
+		ConnectionTimeout: bluetooth.NewDuration(BLEConnectTimeout),
+	})
 	if err != nil {
 		return fmt.Errorf("error connecting to device: %w", err)
 	}
-	d.client = client
+	d.device = &device
 	d.isConnected = true
 
-	d.logger.Info("Discovering profile...")
-	profile, err := d.client.DiscoverProfile(true)
+	d.logger.Info("Discovering services...")
+	services, err := d.device.DiscoverServices(nil)
 	if err != nil {
-		return fmt.Errorf("error discovering profile: %w", err)
+		return fmt.Errorf("error discovering services: %w", err)
 	}
 
-	for _, service := range profile.Services {
-		for _, char := range service.Characteristics {
-			switch char.UUID.String() {
-			case CharacteristicWriteUUID:
-				d.charWrite = char
-			case CharacteristicNotifyUUID:
-				d.charNotify = char
+	for _, service := range services {
+		chars, err := service.DiscoverCharacteristics(nil)
+		if err != nil {
+			return fmt.Errorf("error discovering characteristics: %w", err)
+		}
+
+		for _, char := range chars {
+			switch char.UUID().String() {
+			case CharacteristicWriteUUID.String():
+				d.charWrite = &char
+			case CharacteristicNotifyUUID.String():
+				d.charNotify = &char
 			}
 		}
 	}
@@ -126,8 +132,8 @@ func (d *Device) Connect(ctx context.Context) error {
 	}
 
 	d.logger.Info("Subscribing to notifications...")
-	if err = d.client.Subscribe(d.charNotify, false, d.handleNotification); err != nil {
-		return fmt.Errorf("error subscribing to notifications: %w", err)
+	if err := d.charNotify.EnableNotifications(d.handleNotification); err != nil {
+		return fmt.Errorf("error enabling notifications: %w", err)
 	}
 	d.startPacketProcessing()
 
@@ -136,13 +142,13 @@ func (d *Device) Connect(ctx context.Context) error {
 
 // Disconnect disconnects from the Tuya BLE device
 func (d *Device) Disconnect() error {
-	if d.client != nil {
+	if d.device != nil {
 		d.isConnected = false
-		d.logger.Info("Disconnecting from device...")
-		if err := d.client.ClearSubscriptions(); err != nil {
-			return fmt.Errorf("error clearing subscriptions: %w", err)
+		d.logger.Info("Disconnecting from device...", slog.Any("address", d.address))
+		if err := d.charNotify.EnableNotifications(nil); err != nil {
+			return fmt.Errorf("error disabling notifications: %w", err)
 		}
-		if err := d.client.CancelConnection(); err != nil {
+		if err := d.device.Disconnect(); err != nil {
 			return fmt.Errorf("error cancelling connection: %w", err)
 		}
 	}
@@ -386,7 +392,7 @@ func (d *Device) sendPackets(packets [][]byte) error {
 
 	for i, packet := range packets {
 		d.logger.Debug("Sending packet part", slog.Int("packet_num", i), slog.Int("total_packets", len(packets)))
-		if err := d.client.WriteCharacteristic(d.charWrite, packet, true); err != nil {
+		if _, err := d.charWrite.WriteWithoutResponse(packet); err != nil {
 			return fmt.Errorf("error writing packet %d: %w", i, err)
 		}
 	}

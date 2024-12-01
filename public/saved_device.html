@@ -1,0 +1,15 @@
+<div class="device-item" hx-swap-oob="true" id="{{.ID}}">
+    <div class="device-info">
+        <span class="device-name">{{.Name}}</span>
+        <span class="device-mac">{{.Address}}</span>
+        <span class="device-rssi">{{.RSSI}} dBm</span>
+    </div>
+    {{if .Connected}}
+    <button class="btn-disconnect" hx-post="/devices/{{.Address}}/disconnect">Disconnect</button>
+    {{else}}
+    <div>
+        <button class="btn-connect" hx-post="/devices/{{.Address}}/connect">Connect</button>
+        <button class="btn-forget">Forget</button>
+    </div>
+    {{end}}
+</div>

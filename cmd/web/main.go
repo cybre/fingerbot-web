@@ -2,22 +2,24 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"errors"
+	"fmt"
 	"log"
 	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
-	"time"
 
 	"github.com/golang-cz/devslog"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
+	_ "github.com/mattn/go-sqlite3"
 
 	"github.com/cybre/fingerbot-web/internal/config"
+	"github.com/cybre/fingerbot-web/internal/devices"
 	"github.com/cybre/fingerbot-web/internal/logging"
 	"github.com/cybre/fingerbot-web/internal/tuyable"
-	"github.com/cybre/fingerbot-web/internal/tuyable/fingerbot"
 	"github.com/cybre/fingerbot-web/internal/webapp"
 )
 
@@ -25,6 +27,7 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, os.Kill)
 	defer cancel()
 
+	fmt.Println("Starting Fingerbot Web")
 	config, err := config.Load()
 	if err != nil {
 		log.Fatalf("Failed to load configuration: %v", err)
@@ -51,20 +54,18 @@ func main() {
 
 	logger.Info("Device configuration", slog.Any("config", config.Device))
 
-	// device, err := tuyable.NewDevice(config.DeviceAddress, config.DeviceUUID, config.DeviceID, config.DeviceLocalKey, logger)
-	// if err != nil {
-	// log.Fatalf("Failed to create device instance: %v", err)
-	// }
-	// if err := device.Connect(ctx); err != nil {
-	// 	log.Fatalf("Failed to connect to device: %v", err)
-	// }
-	// defer device.Disconnect()
-	// if err := device.Pair(); err != nil {
-	// 	log.Fatalf("Failed to pair with device: %v", err)
+	db, err := sql.Open("sqlite3", "./fingerbot-web.db")
+	if err != nil {
+		log.Fatalf("error opening database: %s", err)
+	}
+
+	deviceManager := devices.NewManager(devices.NewRepository(db), tuyable.NewDiscoverer(), logger)
+
+	// if err := deviceManager.ConnectToSavedDevices(ctx); err != nil {
+	// 	log.Fatalf("error connecting to existing devices: %s", err)
 	// }
 
-	fingerbot := fingerbot.NewFingerbot(nil)
-	application := webapp.NewWebApp(tuyable.NewDeviceManager(), fingerbot)
+	application := webapp.NewWebApp(deviceManager)
 	e := echo.New()
 	e.Renderer = application
 	e.Use(middleware.Recover())
@@ -115,10 +116,11 @@ func main() {
 
 	<-ctx.Done()
 
-	ctx, cancel = context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
+	deviceManager.DisconnectDevices()
 
-	if err := e.Shutdown(ctx); err != nil {
-		log.Fatalf("error shutting down server: %s", err)
+	if err := e.Close(); err != nil {
+		slog.Error("error shutting down server", slog.Any("error", err))
 	}
+
+	db.Close()
 }

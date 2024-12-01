@@ -3,3 +3,4 @@ logs/
 .env.docker
 /web
 Makefile
+fingerbot-web.db

@@ -1,6 +1,8 @@
 package webapp
 
-import "github.com/cybre/fingerbot-web/internal/tuyable/fingerbot"
+import (
+	"github.com/cybre/fingerbot-web/internal/tuyable/fingerbot"
+)
 
 type IndexData struct {
 	BatteryStatus BatteryStatusData
@@ -40,4 +42,12 @@ func NewBatteryStatusData(device *fingerbot.Fingerbot) BatteryStatusData {
 		BatteryLevel: device.BatteryPercent(),
 		IsCharging:   device.ChargeStatus() != fingerbot.ChargeStatusNone,
 	}
+}
+
+type ConnectDeviceRequest struct {
+	Address  string `form:"address"`
+	DeviceID string `form:"deviceId"`
+	Name     string `form:"name"`
+	Slug     string `form:"slug"`
+	LocalKey string `form:"localKey"`
 }

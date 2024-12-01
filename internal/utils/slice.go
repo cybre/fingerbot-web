@@ -9,3 +9,12 @@ func Find[T any](s []T, f func(T) bool) (T, bool) {
 
 	return *new(T), false
 }
+
+func Map[T, U any](s []T, f func(T) U) []U {
+	result := make([]U, len(s))
+	for i, v := range s {
+		result[i] = f(v)
+	}
+
+	return result
+}

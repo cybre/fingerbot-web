@@ -2,42 +2,40 @@ package webapp
 
 import (
 	"bytes"
-	"context"
 	"fmt"
 	"html/template"
 	"io"
 	"net/http"
-	"time"
 
-	"github.com/cybre/fingerbot-web/internal/tuyable"
-	"github.com/cybre/fingerbot-web/internal/tuyable/fingerbot"
+	"github.com/cybre/fingerbot-web/internal/devices"
 	"github.com/labstack/echo/v4"
 )
 
 type WebApp struct {
-	deviceManager *tuyable.DeviceManager
-	device        *fingerbot.Fingerbot
+	deviceManager *devices.Manager
 	templates     *template.Template
 }
 
 func NewWebApp(
-	deviceManager *tuyable.DeviceManager,
-	device *fingerbot.Fingerbot,
+	deviceManager *devices.Manager,
 ) *WebApp {
 	return &WebApp{
-		device:    device,
-		templates: template.Must(template.ParseGlob("public/*.html")),
+		deviceManager: deviceManager,
+		templates:     template.Must(template.ParseGlob("public/*.html")),
 	}
 }
 
 func (a *WebApp) RegisterRoutes(e *echo.Echo) {
 	e.GET("/devices", a.handleDevices)
-	e.GET("/scan", a.handleScan)
-	e.PUT("/toggle", a.handleToggle)
-	e.GET("/", a.handleIndex)
-	e.GET("/configure", a.handleGetConfiguration)
-	e.PUT("/configure", a.handleSaveConfiguration)
-	e.GET("/battery-status", a.handleGetBatteryStatus)
+	e.GET("/discover", a.handleDiscover)
+	e.POST("/devices", a.handleConnectDevice)
+	e.POST("/devices/:address/connect", a.handleConnectToSavedDevice)
+	e.POST("/devices/:address/disconnect", a.handleDisconnectDevice)
+	// e.PUT("/toggle", a.handleToggle)
+	// e.GET("/", a.handleIndex)
+	// e.GET("/configure", a.handleGetConfiguration)
+	// e.PUT("/configure", a.handleSaveConfiguration)
+	// e.GET("/battery-status", a.handleGetBatteryStatus)
 }
 
 func (t *WebApp) Render(w io.Writer, name string, data interface{}, c echo.Context) error {
@@ -45,20 +43,23 @@ func (t *WebApp) Render(w io.Writer, name string, data interface{}, c echo.Conte
 }
 
 func (a *WebApp) handleDevices(c echo.Context) error {
-	return c.Render(http.StatusOK, "devices.html", nil)
+	savedDevices, err := a.deviceManager.GetSavedDevices(c.Request().Context())
+	if err != nil {
+		return fmt.Errorf("failed to get saved devices: %w", err)
+	}
+
+	return c.Render(http.StatusOK, "devices.html", savedDevices)
 }
 
-func (a *WebApp) handleScan(c echo.Context) error {
+func (a *WebApp) handleDiscover(c echo.Context) error {
 	w := c.Response()
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
 
-	output := make(chan tuyable.DiscoveredDevice)
+	output := make(chan devices.DeviceView)
 	go func() {
-		ctx, cancel := context.WithTimeout(c.Request().Context(), 30*time.Second)
-		defer cancel()
-		if err := a.deviceManager.Scan(ctx, output); err != nil {
+		if err := a.deviceManager.Discover(c.Request().Context(), output); err != nil {
 			panic(err)
 		}
 
@@ -67,8 +68,14 @@ func (a *WebApp) handleScan(c echo.Context) error {
 
 	for device := range output {
 		buff := bytes.NewBuffer(nil)
-		if err := c.Echo().Renderer.Render(buff, "device.html", device, c); err != nil {
-			return fmt.Errorf("failed to render device: %w", err)
+		if !device.Saved {
+			if err := c.Echo().Renderer.Render(buff, "discovered_device.html", device, c); err != nil {
+				return fmt.Errorf("failed to render device: %w", err)
+			}
+		} else {
+			if err := c.Echo().Renderer.Render(buff, "saved_device.html", device, c); err != nil {
+				return fmt.Errorf("failed to render device: %w", err)
+			}
 		}
 		event := Event{
 			Event: []byte("device"),
@@ -92,47 +99,79 @@ func (a *WebApp) handleScan(c echo.Context) error {
 	return nil
 }
 
-func (a *WebApp) handleToggle(c echo.Context) error {
-	return a.device.SetSwitch(!a.device.Switch())
-}
-
-func (a *WebApp) handleIndex(c echo.Context) error {
-	return c.Render(http.StatusOK, "index.html", NewIndexData(a.device))
-}
-
-func (a *WebApp) handleGetConfiguration(c echo.Context) error {
-	return c.Render(http.StatusOK, "configure.html", NewConfigurationData(a.device))
-}
-
-func (a *WebApp) handleSaveConfiguration(c echo.Context) error {
-	var config ConfigurationData
-	if err := c.Bind(&config); err != nil {
+func (a *WebApp) handleConnectDevice(c echo.Context) error {
+	var request devices.DeviceConnection
+	if err := c.Bind(&request); err != nil {
 		return err
 	}
 
-	if err := a.device.Transaction(func(t *fingerbot.FingerbotTransaction) error {
-		if config.Mode != uint32(a.device.Mode()) {
-			t.SetMode(fingerbot.Mode(config.Mode))
-		}
-		if config.ClickSustainTime != a.device.ClickSustainTime() {
-			t.SetClickSustainTime(config.ClickSustainTime)
-		}
-		if config.ControlBack != uint32(a.device.ControlBack()) {
-			t.SetControlBack(fingerbot.ControlBack(config.ControlBack))
-		}
-		if config.ArmDownPercent != a.device.ArmDownPercent() ||
-			config.ArmUpPercent != a.device.ArmUpPercent() {
-			t.SetArmPercent(config.ArmUpPercent, config.ArmDownPercent)
-		}
-
-		return nil
-	}); err != nil {
+	device, err := a.deviceManager.Connect(c.Request().Context(), request)
+	if err != nil {
 		return err
 	}
 
-	return c.NoContent(http.StatusOK)
+	return c.Render(http.StatusOK, "saved_device.html", device)
 }
 
-func (a *WebApp) handleGetBatteryStatus(c echo.Context) error {
-	return c.JSON(http.StatusOK, NewBatteryStatusData(a.device))
+func (a *WebApp) handleConnectToSavedDevice(c echo.Context) error {
+	device, err := a.deviceManager.ConnectToSavedDevice(c.Request().Context(), c.Param("address"))
+	if err != nil {
+		return err
+	}
+
+	return c.Render(http.StatusOK, "saved_device.html", device)
 }
+
+func (a *WebApp) handleDisconnectDevice(c echo.Context) error {
+	device, err := a.deviceManager.DisconnectDevice(c.Request().Context(), c.Param("address"))
+	if err != nil {
+		return err
+	}
+
+	return c.Render(http.StatusOK, "saved_device.html", device)
+}
+
+// func (a *WebApp) handleToggle(c echo.Context) error {
+// 	return a.device.SetSwitch(!a.device.Switch())
+// }
+
+// func (a *WebApp) handleIndex(c echo.Context) error {
+// 	return c.Render(http.StatusOK, "index.html", NewIndexData(a.device))
+// }
+
+// func (a *WebApp) handleGetConfiguration(c echo.Context) error {
+// 	return c.Render(http.StatusOK, "configure.html", NewConfigurationData(a.device))
+// }
+
+// func (a *WebApp) handleSaveConfiguration(c echo.Context) error {
+// 	var config ConfigurationData
+// 	if err := c.Bind(&config); err != nil {
+// 		return err
+// 	}
+
+// 	if err := a.device.Transaction(func(t *fingerbot.FingerbotTransaction) error {
+// 		if config.Mode != uint32(a.device.Mode()) {
+// 			t.SetMode(fingerbot.Mode(config.Mode))
+// 		}
+// 		if config.ClickSustainTime != a.device.ClickSustainTime() {
+// 			t.SetClickSustainTime(config.ClickSustainTime)
+// 		}
+// 		if config.ControlBack != uint32(a.device.ControlBack()) {
+// 			t.SetControlBack(fingerbot.ControlBack(config.ControlBack))
+// 		}
+// 		if config.ArmDownPercent != a.device.ArmDownPercent() ||
+// 			config.ArmUpPercent != a.device.ArmUpPercent() {
+// 			t.SetArmPercent(config.ArmUpPercent, config.ArmDownPercent)
+// 		}
+
+// 		return nil
+// 	}); err != nil {
+// 		return err
+// 	}
+
+// 	return c.NoContent(http.StatusOK)
+// }
+
+// func (a *WebApp) handleGetBatteryStatus(c echo.Context) error {
+// 	return c.JSON(http.StatusOK, NewBatteryStatusData(a.device))
+// }

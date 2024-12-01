@@ -1,0 +1,8 @@
+<div class="device-item" hx-swap-oob="if-exists" id="{{.ID}}">
+  <div class="device-info">
+    <span class="device-name">{{if eq .Name "" }}Unknown device{{else}}{{.Name}}{{end}}</span>
+    <span class="device-mac">{{.Address}}</span>
+    <span class="device-rssi">{{.RSSI}} dBm</span>
+  </div>
+  <button class="btn-connect unsaved">Connect</button>
+</div>
