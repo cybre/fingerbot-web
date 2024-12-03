@@ -59,11 +59,11 @@ func main() {
 		log.Fatalf("error opening database: %s", err)
 	}
 
-	deviceManager := devices.NewManager(devices.NewRepository(db), tuyable.NewDiscoverer(), logger)
+	deviceManager := devices.NewManager(devices.NewRepository(db), tuyable.NewDiscoverer(logger), logger)
 
-	if err := deviceManager.ConnectToSavedDevices(ctx); err != nil {
-		log.Fatalf("error connecting to existing devices: %s", err)
-	}
+	// if err := deviceManager.ConnectToSavedDevices(ctx); err != nil {
+	// 	log.Fatalf("error connecting to existing devices: %s", err)
+	// }
 
 	application := webapp.NewWebApp(deviceManager)
 	e := echo.New()
@@ -119,7 +119,7 @@ func main() {
 	deviceManager.DisconnectDevices()
 
 	if err := e.Close(); err != nil {
-		slog.Error("error shutting down server", slog.Any("error", err))
+		logger.Error("error shutting down server", slog.Any("error", err))
 	}
 
 	db.Close()

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"sync"
 
 	"github.com/cybre/fingerbot-web/internal/tuyable"
 	"github.com/cybre/fingerbot-web/internal/tuyable/fingerbot"
@@ -29,6 +30,7 @@ type Manager struct {
 	discoverer      *tuyable.Discoverer
 	logger          *slog.Logger
 	conectedDevices map[string]*fingerbot.Fingerbot
+	connectingMutex sync.Mutex
 }
 
 func NewManager(repository *Repository, discoverer *tuyable.Discoverer, logger *slog.Logger) *Manager {
@@ -68,7 +70,7 @@ func (m *Manager) ConnectToSavedDevice(ctx context.Context, address string) (*De
 		return nil, fmt.Errorf("failed to get device: %w", err)
 	}
 
-	if err := m.connectDevice(ctx, *device); err != nil {
+	if err := m.connectDevice(ctx, device); err != nil {
 		return nil, err
 	}
 
@@ -82,12 +84,12 @@ func (m *Manager) ConnectToSavedDevice(ctx context.Context, address string) (*De
 }
 
 func (m *Manager) Connect(ctx context.Context, conn DeviceConnection) (*DeviceView, error) {
-	discoveredDevice, ok := m.discoverer.GetDevice(conn.Address)
-	if !ok {
-		return nil, fmt.Errorf("device not found: %s", conn.Address)
+	discoveredDevice, err := m.discoverer.DiscoverDevice(ctx, conn.Address)
+	if err != nil {
+		return nil, fmt.Errorf("failed to discover device: %w", err)
 	}
 
-	device := Device{
+	device := &Device{
 		DeviceID: conn.DeviceID,
 		Address:  discoveredDevice.Address,
 		Name:     conn.Name,
@@ -113,16 +115,10 @@ func (m *Manager) Connect(ctx context.Context, conn DeviceConnection) (*DeviceVi
 }
 
 func (m *Manager) Discover(ctx context.Context, output chan<- DeviceView) error {
-	devices := make(chan tuyable.DiscoveredDevice)
-	go func() {
-		if err := m.discoverer.Discover(ctx, devices); err != nil {
-			m.logger.Error("failed to discover devices", slog.Any("error", err))
-		}
+	m.connectingMutex.Lock()
+	defer m.connectingMutex.Unlock()
 
-		close(devices)
-	}()
-
-	for tuyaDevice := range devices {
+	for tuyaDevice := range m.discoverer.Discover(ctx) {
 		device := DeviceView{
 			Name:      tuyaDevice.LocalName,
 			Address:   tuyaDevice.Address,
@@ -148,6 +144,10 @@ func (m *Manager) Discover(ctx context.Context, output chan<- DeviceView) error 
 		output <- device
 	}
 
+	m.logger.Info("discovery complete, closing output channel")
+
+	close(output)
+
 	return nil
 }
 
@@ -161,7 +161,7 @@ func (m *Manager) GetSavedDevices(ctx context.Context) ([]DeviceView, error) {
 		return nil, fmt.Errorf("failed to get devices: %w", err)
 	}
 
-	return utils.Map(devices, func(device Device) DeviceView {
+	return utils.Map(devices, func(device *Device) DeviceView {
 		return DeviceView{
 			Name:      device.Name,
 			Address:   device.Address,
@@ -212,8 +212,15 @@ func (m *Manager) DisconnectDevices() {
 	}
 }
 
-func (m *Manager) connectDevice(ctx context.Context, device Device) error {
+func (m *Manager) connectDevice(ctx context.Context, device *Device) error {
+	if _, err := m.discoverer.DiscoverDevice(ctx, device.Address); err != nil {
+		return err
+	}
+
 	m.discoverer.StopDiscovery()
+
+	m.connectingMutex.Lock()
+	defer m.connectingMutex.Unlock()
 
 	tuyadevice, err := tuyable.NewDevice(device.Address, device.UUID, device.DeviceID, device.LocalKey, m.logger)
 	if err != nil {

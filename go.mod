@@ -9,7 +9,7 @@ require (
 	github.com/labstack/echo/v4 v4.12.0
 	github.com/mattn/go-sqlite3 v1.14.24
 	golang.org/x/sys v0.26.0
-	tinygo.org/x/bluetooth v0.10.0
+	tinygo.org/x/bluetooth v0.10.1-0.20241121154649-c74fb68742be
 )
 
 require (
@@ -21,7 +21,7 @@ require (
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/saltosystems/winrt-go v0.0.0-20240509164145-4f7860a3bd2b // indirect
 	github.com/sirupsen/logrus v1.9.3 // indirect
-	github.com/soypat/cyw43439 v0.0.0-20240609122733-da9153086796 // indirect
+	github.com/soypat/cyw43439 v0.0.0-20240627234239-a62ee4027d66 // indirect
 	github.com/soypat/seqs v0.0.0-20240527012110-1201bab640ef // indirect
 	github.com/stretchr/testify v1.9.0 // indirect
 	github.com/tinygo-org/cbgo v0.0.4 // indirect

@@ -43,7 +43,7 @@ func (r *Repository) init() error {
 	return nil
 }
 
-func (r *Repository) CreateDevice(ctx context.Context, d Device) error {
+func (r *Repository) CreateDevice(ctx context.Context, d *Device) error {
 	if _, err := r.db.ExecContext(
 		ctx,
 		"INSERT INTO devices (address, device_id, name, local_key, uuid) VALUES ($1, $2, $3, $4, $5)",
@@ -80,21 +80,21 @@ func (r *Repository) GetDevice(ctx context.Context, address string) (*Device, er
 	return &d, nil
 }
 
-func (r *Repository) GetDevices(ctx context.Context) ([]Device, error) {
+func (r *Repository) GetDevices(ctx context.Context) ([]*Device, error) {
 	rows, err := r.db.QueryContext(ctx, "SELECT * FROM devices")
 	if err != nil {
 		return nil, fmt.Errorf("error getting devices: %w", err)
 	}
 	defer rows.Close()
 
-	var devices []Device
+	var devices []*Device
 	for rows.Next() {
 		var d Device
 		if err := rows.Scan(&d.Address, &d.DeviceID, &d.Name, &d.LocalKey, &d.UUID); err != nil {
 			return nil, fmt.Errorf("error scanning device: %w", err)
 		}
 
-		devices = append(devices, d)
+		devices = append(devices, &d)
 	}
 
 	return devices, nil

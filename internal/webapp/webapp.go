@@ -68,8 +68,6 @@ func (a *WebApp) handleDiscover(c echo.Context) error {
 		if err := a.deviceManager.Discover(c.Request().Context(), output); err != nil {
 			panic(err)
 		}
-
-		close(output)
 	}()
 
 	for device := range output {
@@ -93,16 +91,7 @@ func (a *WebApp) handleDiscover(c echo.Context) error {
 		w.Flush()
 	}
 
-	closeEvent := Event{
-		Event: []byte("finished"),
-		Data:  []byte("Scan finished"),
-	}
-	if err := closeEvent.MarshalTo(w); err != nil {
-		return fmt.Errorf("failed to marshal close event: %w", err)
-	}
-	w.Flush()
-
-	return nil
+	return echo.NewHTTPError(http.StatusServiceUnavailable, "Unavailable")
 }
 
 func (a *WebApp) handleConnectDevice(c echo.Context) error {
