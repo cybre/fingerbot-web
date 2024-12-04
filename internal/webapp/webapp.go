@@ -11,6 +11,7 @@ import (
 
 	"github.com/cybre/fingerbot-web/internal/devices"
 	"github.com/cybre/fingerbot-web/internal/tuyable/fingerbot"
+	recurparse "github.com/karelbilek/template-parse-recursive"
 	"github.com/labstack/echo/v4"
 )
 
@@ -24,7 +25,7 @@ func NewWebApp(
 ) *WebApp {
 	return &WebApp{
 		deviceManager: deviceManager,
-		templates:     template.Must(template.ParseGlob("public/*.html")),
+		templates:     template.Must(recurparse.HTMLParse(nil, "public", "*.html")),
 	}
 }
 
@@ -79,11 +80,11 @@ func (a *WebApp) handleDiscover(c echo.Context) error {
 	for device := range output {
 		buff := bytes.NewBuffer(nil)
 		if !device.Saved {
-			if err := c.Echo().Renderer.Render(buff, "discovered_device.html", device, c); err != nil {
+			if err := c.Echo().Renderer.Render(buff, "fragments/discovered_device.html", device, c); err != nil {
 				return fmt.Errorf("failed to render discovered device: %w", err)
 			}
 		} else {
-			if err := c.Echo().Renderer.Render(buff, "saved_device.html", device, c); err != nil {
+			if err := c.Echo().Renderer.Render(buff, "fragments/saved_device.html", device, c); err != nil {
 				return fmt.Errorf("failed to render saved device: %w", err)
 			}
 		}
@@ -120,7 +121,7 @@ func (a *WebApp) handleConnectDevice(c echo.Context) error {
 		return err
 	}
 
-	return c.Render(http.StatusOK, "saved_device.html", device)
+	return c.Render(http.StatusOK, "fragments/saved_device.html", device)
 }
 
 func (a *WebApp) handleConnectToSavedDevice(c echo.Context) error {
@@ -129,7 +130,7 @@ func (a *WebApp) handleConnectToSavedDevice(c echo.Context) error {
 		return err
 	}
 
-	return c.Render(http.StatusOK, "saved_device.html", device)
+	return c.Render(http.StatusOK, "fragments/saved_device.html", device)
 }
 
 func (a *WebApp) handleDisconnectDevice(c echo.Context) error {
@@ -138,7 +139,7 @@ func (a *WebApp) handleDisconnectDevice(c echo.Context) error {
 		return err
 	}
 
-	return c.Render(http.StatusOK, "saved_device.html", device)
+	return c.Render(http.StatusOK, "fragments/saved_device.html", device)
 }
 func (a *WebApp) handleForgetDevice(c echo.Context) error {
 	if err := a.deviceManager.ForgetDevice(c.Request().Context(), c.Param("address")); err != nil {
@@ -165,7 +166,7 @@ func (a *WebApp) handleDeviceIndex(c echo.Context) error {
 		return c.Redirect(http.StatusTemporaryRedirect, "/devices")
 	}
 
-	return c.Render(http.StatusOK, "index.html", NewIndexData(fingerbot))
+	return c.Render(http.StatusOK, "device.html", NewIndexData(fingerbot))
 }
 
 func (a *WebApp) handleGetConfiguration(c echo.Context) error {
@@ -174,7 +175,7 @@ func (a *WebApp) handleGetConfiguration(c echo.Context) error {
 		return c.Redirect(http.StatusTemporaryRedirect, "/devices")
 	}
 
-	return c.Render(http.StatusOK, "configure.html", NewConfigurationData(fingerbot))
+	return c.Render(http.StatusOK, "device_configure.html", NewConfigurationData(fingerbot))
 }
 
 func (a *WebApp) handleSaveConfiguration(c echo.Context) error {

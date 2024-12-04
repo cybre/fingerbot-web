@@ -347,7 +347,7 @@
 
     <div class="device-list" hx-ext="sse,oob-if-exists" sse-connect="/discover" sse-swap="device" hx-swap="beforeend" sse-close="finished">
       {{range .}}
-      {{ template "saved_device.html" . }}
+      {{ template "fragments/saved_device.html" . }}
       {{end}}
     </div>
   </div>
