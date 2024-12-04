@@ -40,6 +40,15 @@ func NewManager(repository *Repository, discoverer *tuyable.Discoverer, logger *
 	}
 }
 
+func (m *Manager) GetConnectedDevices() []*fingerbot.Fingerbot {
+	devices := make([]*fingerbot.Fingerbot, 0, len(m.conectedDevices))
+	for _, device := range m.conectedDevices {
+		devices = append(devices, device)
+	}
+
+	return devices
+}
+
 func (m *Manager) ConnectToSavedDevices(ctx context.Context) error {
 	devices, err := m.repository.GetDevices(ctx)
 	if err != nil {
@@ -155,14 +164,14 @@ func (m *Manager) GetFingerbot(address string) *fingerbot.Fingerbot {
 	return m.conectedDevices[address]
 }
 
-func (m *Manager) GetSavedDevices(ctx context.Context) ([]DeviceView, error) {
+func (m *Manager) GetSavedDevices(ctx context.Context) ([]*DeviceView, error) {
 	devices, err := m.repository.GetDevices(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get devices: %w", err)
 	}
 
-	return utils.Map(devices, func(device *Device) DeviceView {
-		return DeviceView{
+	return utils.Map(devices, func(device *Device) *DeviceView {
+		return &DeviceView{
 			Name:      device.Name,
 			Address:   device.Address,
 			RSSI:      0,
@@ -213,7 +222,7 @@ func (m *Manager) DisconnectDevices() {
 }
 
 func (m *Manager) connectDevice(ctx context.Context, device *Device) error {
-	tuyadevice, err := tuyable.NewDevice(device.Address, device.UUID, device.DeviceID, device.LocalKey, m.logger)
+	tuyadevice, err := tuyable.NewDevice(device.Address, device.Name, device.UUID, device.DeviceID, device.LocalKey, m.logger)
 	if err != nil {
 		return err
 	}

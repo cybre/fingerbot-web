@@ -30,6 +30,7 @@ func NewWebApp(
 }
 
 func (a *WebApp) RegisterRoutes(e *echo.Echo) {
+	e.GET("/", a.handleIndex)
 	e.GET("/discover", a.handleDiscover)
 	devicesGroup := e.Group("/devices")
 	devicesGroup.GET("", a.handleDevices)
@@ -48,6 +49,19 @@ func (a *WebApp) RegisterRoutes(e *echo.Echo) {
 
 func (t *WebApp) Render(w io.Writer, name string, data interface{}, c echo.Context) error {
 	return t.templates.ExecuteTemplate(w, name, data)
+}
+
+func (a *WebApp) handleIndex(c echo.Context) error {
+	selectedDeviceCookie, err := c.Cookie("selectedDevice")
+	if err == nil {
+		return c.Redirect(http.StatusTemporaryRedirect, fmt.Sprintf("/devices/%s", selectedDeviceCookie.Value))
+	}
+
+	for _, device := range a.deviceManager.GetConnectedDevices() {
+		return c.Redirect(http.StatusTemporaryRedirect, fmt.Sprintf("/devices/%s", device.Address()))
+	}
+
+	return c.Redirect(http.StatusTemporaryRedirect, "/devices")
 }
 
 func (a *WebApp) handleDevices(c echo.Context) error {
@@ -166,7 +180,13 @@ func (a *WebApp) handleDeviceIndex(c echo.Context) error {
 		return c.Redirect(http.StatusTemporaryRedirect, "/devices")
 	}
 
-	return c.Render(http.StatusOK, "device.html", NewIndexData(fingerbot))
+	c.SetCookie(&http.Cookie{
+		Name:  "selectedDevice",
+		Value: fingerbot.Address(),
+		Path:  "/",
+	})
+
+	return c.Render(http.StatusOK, "device.html", NewIndexData(fingerbot, a.deviceManager.GetConnectedDevices()))
 }
 
 func (a *WebApp) handleGetConfiguration(c echo.Context) error {

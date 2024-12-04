@@ -1,6 +1,6 @@
 <div class="device-item" hx-swap-oob="true" id="{{.ID}}">
     <div class="device-info">
-        <span class="device-name">{{.Name}}</span>
+        {{if .Connected}}<a href="/devices/{{.Address}}" class="device-name">{{.Name}}</a>{{else}}<span class="device-name">{{.Name}}</span>{{end}}
         <span class="device-mac">{{.Address}}</span>
         {{if not .Connected}}<span class="device-rssi">{{.RSSI}} dBm</span>{{end}}
     </div>
@@ -11,7 +11,7 @@
     </button>
     {{else}}
     <div id="actions-{{.ID}}" hx-preserve class="device-actions">
-        <button class="btn-connect" hx-post="/devices/{{.Address}}/connect">
+        <button class="btn-connect" hx-post="/devices/{{.Address}}/connect" >
             <span class="spinner spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>
             Connect
         </button>

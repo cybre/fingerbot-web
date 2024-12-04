@@ -38,6 +38,7 @@ var (
 // Device represents a Tuya BLE device
 type Device struct {
 	client            ble.Client
+	name              string
 	address           string
 	charWrite         *ble.Characteristic
 	charNotify        *ble.Characteristic
@@ -64,7 +65,7 @@ type Device struct {
 }
 
 // NewDevice creates a new Device instance
-func NewDevice(address, uuid, deviceID, localKey string, logger *slog.Logger) (*Device, error) {
+func NewDevice(address, name, uuid, deviceID, localKey string, logger *slog.Logger) (*Device, error) {
 	localKeyBytes := []byte(localKey)
 	if len(localKeyBytes) < 6 {
 		return nil, fmt.Errorf("localKey must be at least 6 bytes")
@@ -77,6 +78,7 @@ func NewDevice(address, uuid, deviceID, localKey string, logger *slog.Logger) (*
 	loginKey := md5.Sum(localKeyBytes[:6]) // Use first 6 bytes for loginKey
 	return &Device{
 		address:         strings.ToUpper(address),
+		name:            name,
 		uuid:            uuid,
 		deviceID:        deviceID,
 		localKey:        localKeyBytes[:6],
@@ -259,6 +261,11 @@ func (d *Device) SetDatapoints(datapoints []DataPoint) error {
 // GetAddress returns the device address
 func (d *Device) GetAddress() string {
 	return d.address
+}
+
+// GetName returns the device name
+func (d *Device) GetName() string {
+	return d.name
 }
 
 // handleNotification processes incoming notifications from the device

@@ -2,17 +2,37 @@ package webapp
 
 import (
 	"github.com/cybre/fingerbot-web/internal/tuyable/fingerbot"
+	"github.com/cybre/fingerbot-web/internal/utils"
 )
+
+type DeviceDropdownItem struct {
+	Address string
+	Name    string
+}
+
+func NewDeviceDropdownItems(devs []*fingerbot.Fingerbot) []DeviceDropdownItem {
+	return utils.Map(devs, func(d *fingerbot.Fingerbot) DeviceDropdownItem {
+		return DeviceDropdownItem{
+			Address: d.Address(),
+			Name:    d.Name(),
+		}
+	})
+}
 
 type IndexData struct {
 	BatteryStatus BatteryStatusData
-	ID            string
+	Name          string
+	Address       string
+	Devices       []DeviceDropdownItem
 }
 
-func NewIndexData(device *fingerbot.Fingerbot) IndexData {
+func NewIndexData(device *fingerbot.Fingerbot, allDevices []*fingerbot.Fingerbot) IndexData {
+	currentDevice, _ := utils.Find(allDevices, func(d *fingerbot.Fingerbot) bool { return d.Address() == device.Address() })
 	return IndexData{
 		BatteryStatus: NewBatteryStatusData(device),
-		ID:            device.ID(),
+		Address:       currentDevice.Address(),
+		Name:          currentDevice.Name(),
+		Devices:       NewDeviceDropdownItems(utils.Filter(allDevices, func(d *fingerbot.Fingerbot) bool { return d.Address() != currentDevice.Address() })),
 	}
 }
 
@@ -27,7 +47,7 @@ type ConfigurationData struct {
 
 func NewConfigurationData(device *fingerbot.Fingerbot) ConfigurationData {
 	return ConfigurationData{
-		ID:               device.ID(),
+		ID:               device.Address(),
 		Mode:             uint32(device.Mode()),
 		ClickSustainTime: device.ClickSustainTime(),
 		ControlBack:      uint32(device.ControlBack()),

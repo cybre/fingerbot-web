@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8">
   <title>Fingerbot</title>
@@ -7,10 +8,9 @@
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css" rel="stylesheet">
   <script src="https://unpkg.com/htmx.org@2.0.3"></script>
-  
   <style>
     body {
-      background-color: #121212; 
+      background-color: #121212;
       color: #ffffff;
       font-family: Arial, sans-serif;
       margin: 0;
@@ -38,23 +38,23 @@
       align-items: center;
       background-color: #ff5722;
       border: none;
-      color: #ffffff; 
+      color: #ffffff;
       box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
       transition: transform 0.2s, box-shadow 0.2s, background-color 0.2s;
-      cursor: pointer; 
-      user-select: none; 
-      outline: none; 
+      cursor: pointer;
+      user-select: none;
+      outline: none;
       text-align: center;
     }
 
     .btn-toggle:hover {
       transform: scale(1.05);
       box-shadow: 0 6px 8px rgba(0, 0, 0, 0.4);
-      background-color: #e64a19; 
+      background-color: #e64a19;
     }
 
     .btn-toggle:active {
-      transform: scale(0.95); 
+      transform: scale(0.95);
       box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
       background-color: #d84315;
     }
@@ -65,8 +65,8 @@
       padding: 0.5rem 1rem;
       max-width: 180px;
       box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
-      transition: transform 0.2s, box-shadow 0.2s; 
-      cursor: pointer; 
+      transition: transform 0.2s, box-shadow 0.2s;
+      cursor: pointer;
       text-align: center;
       width: 100%;
     }
@@ -77,8 +77,8 @@
     }
 
     .btn-configure:active {
-      transform: scale(0.98); 
-      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2); 
+      transform: scale(0.98);
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
     }
 
     @media (max-width: 768px) {
@@ -150,29 +150,54 @@
     }
 
     .battery-level-medium {
-      color: #ffc107; 
+      color: #ffc107;
     }
 
     .battery-level-low {
-      color: #dc3545; 
+      color: #dc3545;
     }
 
     .blur {
       filter: blur(3px);
     }
+
+    .device-switcher {
+      position: fixed;
+      top: 10px;
+      left: 20px;
+      z-index: 1000;
+    }
   </style>
 </head>
+
 <body>
   <div class="battery-indicator" id="batteryIndicator" aria-label="Battery Charge Level and Charging Status">
     <i class="bi bi-battery-full battery-icon" id="batteryIcon"></i>
     <span id="batteryLevel">100%</span>
   </div>
 
+  <div class="device-switcher" id="deviceSwitcher" aria-label="Device Switcher">
+    <div class="dropdown">
+      <button class="btn btn-secondary dropdown-toggle" type="button" id="deviceDropdown" data-bs-toggle="dropdown"
+        aria-expanded="false">
+        {{.Name}}
+      </button>
+      <ul class="dropdown-menu" aria-labelledby="deviceDropdown">
+        {{range .Devices}}
+        <li><a class="dropdown-item" href="/devices/{{.Address}}">{{.Name}}</a></li>
+        {{end}}
+        {{ if .Devices }}<div class="dropdown-divider"></div>{{end}}
+        <li><a class="dropdown-item" href="/devices">Manage devices</a></li>
+      </ul>
+    </div>
+  </div>
+
   <div class="container">
-    <button type="button" class="btn-toggle" id="activateButton" aria-label="Activate" hx-put="/devices/{{.ID}}/toggle" hx-swap="none">
+    <button type="button" class="btn-toggle" id="activateButton" aria-label="Activate" hx-put="/devices/{{.Address}}/toggle"
+      hx-swap="none">
       <span class="btn-text">Activate</span>
     </button>
-    <a href="/devices/{{.ID}}/configure" hx-swap="body" class="btn btn-secondary btn-configure">
+    <a href="/devices/{{.Address}}/configure" hx-swap="body" class="btn btn-secondary btn-configure">
       Configure
     </a>
   </div>
@@ -207,7 +232,7 @@
       }
 
       function fetchBatteryStatus() {
-        fetch('/devices/{{.ID}}/battery-status').then(function (response) {
+        fetch('/devices/{{.Address}}/battery-status').then(function (response) {
           if (!response.ok) {
             throw new Error('Network response was not ok');
           }
@@ -227,25 +252,28 @@
         batteryIndicator.classList.remove('battery-level-high', 'battery-level-medium', 'battery-level-low');
       }
 
-      updateBatteryIndicator({{.BatteryStatus.BatteryLevel}}, {{.BatteryStatus.IsCharging}});
-      setInterval(fetchBatteryStatus, 5000);
+      updateBatteryIndicator({{.BatteryStatus.BatteryLevel }}, {{.BatteryStatus.IsCharging }});
+    setInterval(fetchBatteryStatus, 5000);
 
-      activateButton.addEventListener('htmx:beforeRequest', function () {
-        activateButton.classList.add('disabled', 'blur');
-        activateButton.disabled = true;
-      });
+    activateButton.addEventListener('htmx:beforeRequest', function () {
+      activateButton.classList.add('disabled', 'blur');
+      activateButton.disabled = true;
+    });
 
-      activateButton.addEventListener('htmx:afterRequest', function (evt) {
-        activateButton.classList.remove('disabled', 'blur');
-        activateButton.disabled = false;
-      });
+    activateButton.addEventListener('htmx:afterRequest', function (evt) {
+      activateButton.classList.remove('disabled', 'blur');
+      activateButton.disabled = false;
+    });
 
-      activateButton.addEventListener('htmx:responseError', function () {
-        activateButton.classList.remove('disabled', 'blur');
-        activateButton.disabled = false;
-        alert('An error occurred. Please try again.');
-      });
+    activateButton.addEventListener('htmx:responseError', function () {
+      activateButton.classList.remove('disabled', 'blur');
+      activateButton.disabled = false;
+      alert('An error occurred. Please try again.');
+    });
     });
   </script>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 </body>
+
 </html>
