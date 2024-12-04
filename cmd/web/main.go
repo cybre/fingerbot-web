@@ -52,8 +52,6 @@ func main() {
 
 	ctx = logging.Context(ctx, logger)
 
-	logger.Info("Device configuration", slog.Any("config", config.Device))
-
 	db, err := sql.Open("sqlite3", "./fingerbot-web.db")
 	if err != nil {
 		log.Fatalf("error opening database: %s", err)

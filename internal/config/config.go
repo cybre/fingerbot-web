@@ -12,8 +12,6 @@ import (
 type Config struct {
 	Service
 	Logging
-	TuyaCloud
-	Device
 }
 
 func Load(filenames ...string) (*Config, error) {
