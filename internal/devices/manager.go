@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
-	"sync"
 
 	"github.com/cybre/fingerbot-web/internal/tuyable"
 	"github.com/cybre/fingerbot-web/internal/tuyable/fingerbot"
@@ -16,7 +15,7 @@ import (
 type DeviceView struct {
 	Name      string
 	Address   string
-	RSSI      int16
+	RSSI      int
 	Saved     bool
 	Connected bool
 }
@@ -30,7 +29,6 @@ type Manager struct {
 	discoverer      *tuyable.Discoverer
 	logger          *slog.Logger
 	conectedDevices map[string]*fingerbot.Fingerbot
-	connectingMutex sync.Mutex
 }
 
 func NewManager(repository *Repository, discoverer *tuyable.Discoverer, logger *slog.Logger) *Manager {
@@ -91,7 +89,7 @@ func (m *Manager) Connect(ctx context.Context, conn DeviceConnection) (*DeviceVi
 
 	device := &Device{
 		DeviceID: conn.DeviceID,
-		Address:  discoveredDevice.Address,
+		Address:  conn.Address,
 		Name:     conn.Name,
 		LocalKey: conn.LocalKey,
 		UUID:     string(discoveredDevice.UUID),
@@ -115,10 +113,16 @@ func (m *Manager) Connect(ctx context.Context, conn DeviceConnection) (*DeviceVi
 }
 
 func (m *Manager) Discover(ctx context.Context, output chan<- DeviceView) error {
-	m.connectingMutex.Lock()
-	defer m.connectingMutex.Unlock()
+	devices, unsubscribe := m.discoverer.Discover()
+	defer unsubscribe()
 
-	for tuyaDevice := range m.discoverer.Discover(ctx) {
+	for tuyaDevice := range devices {
+		select {
+		case <-ctx.Done():
+			return nil
+		default:
+		}
+
 		device := DeviceView{
 			Name:      tuyaDevice.LocalName,
 			Address:   tuyaDevice.Address,
@@ -143,10 +147,6 @@ func (m *Manager) Discover(ctx context.Context, output chan<- DeviceView) error 
 
 		output <- device
 	}
-
-	m.logger.Info("discovery complete, closing output channel")
-
-	close(output)
 
 	return nil
 }
@@ -213,15 +213,6 @@ func (m *Manager) DisconnectDevices() {
 }
 
 func (m *Manager) connectDevice(ctx context.Context, device *Device) error {
-	if _, err := m.discoverer.DiscoverDevice(ctx, device.Address); err != nil {
-		return err
-	}
-
-	m.discoverer.StopDiscovery()
-
-	m.connectingMutex.Lock()
-	defer m.connectingMutex.Unlock()
-
 	tuyadevice, err := tuyable.NewDevice(device.Address, device.UUID, device.DeviceID, device.LocalKey, m.logger)
 	if err != nil {
 		return err

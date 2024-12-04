@@ -7,12 +7,13 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/cybre/fingerbot-web/internal/logging"
 	"github.com/cybre/fingerbot-web/internal/tuyable/packet"
-	"tinygo.org/x/bluetooth"
+	"github.com/go-ble/ble"
 )
 
 const (
@@ -28,16 +29,18 @@ const (
 
 var (
 	// https://developer.tuya.com/en/docs/iot-device-dev/tuya-ble-sdk-user-guide?id=K9h5zc4e5djd9#title-5-The%20concepts%20of%20tuya%20ble%20service
-	CharacteristicNotifyUUID = bluetooth.New16BitUUID(0x2b10)
-	CharacteristicWriteUUID  = bluetooth.New16BitUUID(0x2b11)
+	CharacteristicNotifyUUID = ble.UUID16(0x2b10)
+	CharacteristicWriteUUID  = ble.UUID16(0x2b11)
+
+	ConnectServiceUUID = ble.UUID16(0x1910)
 )
 
 // Device represents a Tuya BLE device
 type Device struct {
-	device            *bluetooth.Device
-	address           bluetooth.Address
-	charWrite         *bluetooth.DeviceCharacteristic
-	charNotify        *bluetooth.DeviceCharacteristic
+	client            ble.Client
+	address           string
+	charWrite         *ble.Characteristic
+	charNotify        *ble.Characteristic
 	localKey          []byte
 	loginKey          []byte
 	sessionKey        []byte
@@ -71,14 +74,9 @@ func NewDevice(address, uuid, deviceID, localKey string, logger *slog.Logger) (*
 		logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	}
 
-	mac, err := bluetooth.ParseMAC(address)
-	if err != nil {
-		return nil, fmt.Errorf("error parsing MAC address: %w", err)
-	}
-
 	loginKey := md5.Sum(localKeyBytes[:6]) // Use first 6 bytes for loginKey
 	return &Device{
-		address:         bluetooth.Address{MACAddress: bluetooth.MACAddress{MAC: mac}},
+		address:         strings.ToUpper(address),
 		uuid:            uuid,
 		deviceID:        deviceID,
 		localKey:        localKeyBytes[:6],
@@ -95,33 +93,30 @@ func NewDevice(address, uuid, deviceID, localKey string, logger *slog.Logger) (*
 // Connect connects to the Tuya BLE device
 func (d *Device) Connect(ctx context.Context) error {
 	d.logger.Info("Connecting to device...")
-	device, err := bluetooth.DefaultAdapter.Connect(d.address, bluetooth.ConnectionParams{
-		ConnectionTimeout: bluetooth.NewDuration(BLEConnectTimeout),
-	})
+	client, err := ble.Dial(ble.WithSigHandler(context.WithTimeout(ctx, BLEConnectTimeout)), ble.NewAddr(d.address))
 	if err != nil {
 		return fmt.Errorf("error connecting to device: %w", err)
 	}
-	d.device = &device
+	d.client = client
 	d.isConnected = true
 
-	d.logger.Info("Discovering services...")
-	services, err := d.device.DiscoverServices(nil)
+	d.logger.Info("Discovering profile...")
+	profile, err := d.client.DiscoverProfile(true)
 	if err != nil {
-		return fmt.Errorf("error discovering services: %w", err)
+		return fmt.Errorf("error discovering profile: %w", err)
 	}
 
-	for _, service := range services {
-		chars, err := service.DiscoverCharacteristics(nil)
-		if err != nil {
-			return fmt.Errorf("error discovering characteristics: %w", err)
+	for _, service := range profile.Services {
+		if !service.UUID.Equal(ConnectServiceUUID) {
+			continue
 		}
 
-		for _, char := range chars {
-			switch char.UUID() {
-			case CharacteristicWriteUUID:
-				d.charWrite = &char
-			case CharacteristicNotifyUUID:
-				d.charNotify = &char
+		for _, char := range service.Characteristics {
+			if char.UUID.Equal(CharacteristicWriteUUID) {
+				d.charWrite = char
+			}
+			if char.UUID.Equal(CharacteristicNotifyUUID) {
+				d.charNotify = char
 			}
 		}
 	}
@@ -131,8 +126,8 @@ func (d *Device) Connect(ctx context.Context) error {
 	}
 
 	d.logger.Info("Subscribing to notifications...")
-	if err := d.charNotify.EnableNotifications(d.handleNotification); err != nil {
-		return fmt.Errorf("error enabling notifications: %w", err)
+	if err = d.client.Subscribe(d.charNotify, false, d.handleNotification); err != nil {
+		return fmt.Errorf("error subscribing to notifications: %w", err)
 	}
 	d.startPacketProcessing()
 
@@ -141,13 +136,13 @@ func (d *Device) Connect(ctx context.Context) error {
 
 // Disconnect disconnects from the Tuya BLE device
 func (d *Device) Disconnect() error {
-	if d.device != nil {
+	if d.client != nil {
 		d.isConnected = false
 		d.logger.Info("Disconnecting from device...")
-		if err := d.charNotify.EnableNotifications(nil); err != nil {
-			return fmt.Errorf("error disabling notifications: %w", err)
+		if err := d.client.ClearSubscriptions(); err != nil {
+			return fmt.Errorf("error clearing subscriptions: %w", err)
 		}
-		if err := d.device.Disconnect(); err != nil {
+		if err := d.client.CancelConnection(); err != nil {
 			return fmt.Errorf("error cancelling connection: %w", err)
 		}
 	}
@@ -263,7 +258,7 @@ func (d *Device) SetDatapoints(datapoints []DataPoint) error {
 
 // GetAddress returns the device address
 func (d *Device) GetAddress() string {
-	return d.address.String()
+	return d.address
 }
 
 // handleNotification processes incoming notifications from the device
@@ -396,7 +391,7 @@ func (d *Device) sendPackets(packets [][]byte) error {
 
 	for i, packet := range packets {
 		d.logger.Debug("Sending packet part", slog.Int("packet_num", i), slog.Int("total_packets", len(packets)))
-		if _, err := d.charWrite.WriteWithoutResponse(packet); err != nil {
+		if err := d.client.WriteCharacteristic(d.charWrite, packet, true); err != nil {
 			return fmt.Errorf("error writing packet %d: %w", i, err)
 		}
 	}

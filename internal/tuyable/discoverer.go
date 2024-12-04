@@ -6,20 +6,21 @@ import (
 	"crypto/cipher"
 	"crypto/md5"
 	"errors"
-	"fmt"
 	"io"
 	"log/slog"
 	"strings"
+	"sync"
 
 	"github.com/cybre/fingerbot-web/internal/utils"
-	"tinygo.org/x/bluetooth"
+	"github.com/go-ble/ble"
+	"github.com/google/uuid"
 )
 
 const (
 	ManufacturerID = 0x07D0
 )
 
-var ServiceUUID = bluetooth.New16BitUUID(0xa201)
+var DiscoverServiceUUID = ble.UUID16(0xa201)
 
 type DiscoveredDevice struct {
 	LocalName       string
@@ -27,7 +28,7 @@ type DiscoveredDevice struct {
 	IsBound         bool
 	ProtocolVersion byte
 	UUID            []byte
-	RSSI            int16
+	RSSI            int
 }
 
 func (d DiscoveredDevice) ID() string {
@@ -35,9 +36,11 @@ func (d DiscoveredDevice) ID() string {
 }
 
 type Discoverer struct {
-	deviceCache map[string]*DiscoveredDevice
-	logger      *slog.Logger
-	disovery    chan *DiscoveredDevice
+	deviceCache     map[string]*DiscoveredDevice
+	logger          *slog.Logger
+	listeners       map[string]chan *DiscoveredDevice
+	discoveryMutex  sync.Mutex
+	cancelDiscovery context.CancelFunc
 }
 
 func NewDiscoverer(logger *slog.Logger) *Discoverer {
@@ -48,18 +51,22 @@ func NewDiscoverer(logger *slog.Logger) *Discoverer {
 	return &Discoverer{
 		deviceCache: map[string]*DiscoveredDevice{},
 		logger:      logger,
+		listeners:   map[string]chan *DiscoveredDevice{},
 	}
 }
 
-func (dm *Discoverer) DiscoverDevice(ctx context.Context, address string) (*DiscoveredDevice, error) {
-	dm.logger.Info("discovering device", slog.String("address", address))
+func (d *Discoverer) DiscoverDevice(ctx context.Context, address string) (*DiscoveredDevice, error) {
+	d.logger.Debug("discovering device", slog.String("address", address))
 
-	if device, ok := dm.deviceCache[address]; ok {
-		dm.logger.Info("device found in cache", slog.Any("device", device))
+	if device, ok := d.deviceCache[address]; ok {
+		d.logger.Debug("device found in cache", slog.Any("device", device))
 		return device, nil
 	}
 
-	for device := range dm.Discover(ctx) {
+	devices, unsubscribe := d.Discover()
+	defer unsubscribe()
+
+	for device := range devices {
 		if device.Address == address {
 			return device, nil
 		}
@@ -68,91 +75,95 @@ func (dm *Discoverer) DiscoverDevice(ctx context.Context, address string) (*Disc
 	return nil, errors.New("device not found")
 }
 
-func (dm *Discoverer) StopDiscovery() {
-	bluetooth.DefaultAdapter.StopScan()
-}
+func (d *Discoverer) Discover() (<-chan *DiscoveredDevice, func()) {
+	d.discoveryMutex.Lock()
+	defer d.discoveryMutex.Unlock()
 
-func (dm *Discoverer) Discover(ctx context.Context) <-chan *DiscoveredDevice {
-	dm.logger.Info("discovering devices")
-	if dm.disovery != nil {
-		dm.logger.Debug("discovery already in progress")
-		return dm.disovery
-	}
+	output := make(chan *DiscoveredDevice)
+	listenerID := uuid.NewString()
+	d.listeners[listenerID] = output
+	d.logger.Debug("subscribed to discovery", slog.String("listener_id", listenerID))
 
-	dm.disovery = make(chan *DiscoveredDevice)
+	if d.cancelDiscovery == nil {
+		d.logger.Debug("starting discovery")
+		go func() {
+			ctx, cancel := context.WithCancel(context.Background())
+			d.cancelDiscovery = cancel
+			defer func() {
+				cancel()
+				d.cancelDiscovery = nil
+			}()
 
-	go func() {
-		dm.logger.Info("starting discovery")
-		if err := bluetooth.DefaultAdapter.Scan(func(a *bluetooth.Adapter, sr bluetooth.ScanResult) {
-			select {
-			case <-ctx.Done():
-				dm.logger.Info("context done, stopping scan")
-				if err := a.StopScan(); err != nil {
-					dm.logger.Error("error stopping scan", slog.Any("error", err))
+			if err := ble.Scan(ctx, true, func(a ble.Advertisement) {
+				if len(a.ManufacturerData()) < 2 {
 					return
 				}
-			default:
-			}
 
-			device, err := dm.handleScanResult(sr)
-			if err != nil {
-				dm.logger.Debug("error handling scan result", slog.Any("error", err))
-				return
-			} else if device != nil {
-				dm.disovery <- device
+				companyID := uint16(a.ManufacturerData()[1])<<8 | uint16(a.ManufacturerData()[0])
+				if companyID != ManufacturerID {
+					return
+				}
+
+				manufacturerData := a.ManufacturerData()[2:]
+				if len(manufacturerData) <= 6 {
+					return
+				}
+
+				service, ok := utils.Find(a.ServiceData(), func(element ble.ServiceData) bool {
+					return element.UUID.Equal(DiscoverServiceUUID)
+				})
+				if !ok {
+					return
+				}
+
+				if len(service.Data) < 1 {
+					return
+				}
+				rawProductId := service.Data[1:]
+
+				rawUUID := manufacturerData[6:]
+				key := md5.Sum(rawProductId)
+				block, err := aes.NewCipher(key[:])
+				if err != nil {
+					d.logger.Error("error creating cipher", slog.Any("error", err))
+					return
+				}
+				mode := cipher.NewCBCDecrypter(block, key[:])
+				decrypted := make([]byte, len(rawUUID))
+				mode.CryptBlocks(decrypted, rawUUID)
+
+				device := &DiscoveredDevice{
+					LocalName:       a.LocalName(),
+					Address:         strings.ToUpper(a.Addr().String()),
+					IsBound:         (manufacturerData[0] & 0x80) != 0,
+					ProtocolVersion: manufacturerData[1],
+					UUID:            decrypted,
+					RSSI:            a.RSSI(),
+				}
+
+				d.deviceCache[strings.ToUpper(a.Addr().String())] = device
+
+				for _, listener := range d.listeners {
+					listener <- device
+				}
+
+				d.logger.Debug("device discovered", slog.Any("device", device))
+			}, nil); err != nil {
+				if !errors.Is(err, context.Canceled) {
+					d.logger.Error("error scanning", slog.Any("error", err))
+				}
 			}
-		}); err != nil {
-			dm.logger.Error("error scanning", slog.Any("error", err))
+		}()
+	}
+
+	return output, func() {
+		d.logger.Debug("unsubscribing from discovery", slog.String("listener_id", listenerID))
+		close(output)
+		delete(d.listeners, listenerID)
+		if len(d.listeners) == 0 {
+			d.logger.Debug("stopping discovery")
+			d.cancelDiscovery()
+			d.cancelDiscovery = nil
 		}
-
-		dm.logger.Info("discovery finished")
-		close(dm.disovery)
-		dm.disovery = nil
-	}()
-
-	return dm.disovery
-}
-
-func (dm *Discoverer) handleScanResult(sr bluetooth.ScanResult) (*DiscoveredDevice, error) {
-	service, ok := utils.Find(sr.ServiceData(), func(element bluetooth.ServiceDataElement) bool {
-		return element.UUID == ServiceUUID
-	})
-	if !ok {
-		return nil, errors.New("service data not found")
 	}
-
-	if len(service.Data) < 1 {
-		return nil, errors.New("service data too short")
-	}
-	rawProductId := service.Data[1:]
-
-	manufacturerData, ok := utils.Find(sr.ManufacturerData(), func(element bluetooth.ManufacturerDataElement) bool {
-		return element.CompanyID == ManufacturerID
-	})
-	if !ok || len(manufacturerData.Data) <= 6 {
-		return nil, errors.New("manufacturer data not found")
-	}
-
-	rawUUID := manufacturerData.Data[6:]
-	key := md5.Sum(rawProductId)
-	block, err := aes.NewCipher(key[:])
-	if err != nil {
-		return nil, fmt.Errorf("error creating cipher: %w", err)
-	}
-	mode := cipher.NewCBCDecrypter(block, key[:])
-	decrypted := make([]byte, len(rawUUID))
-	mode.CryptBlocks(decrypted, rawUUID)
-
-	device := &DiscoveredDevice{
-		LocalName:       sr.LocalName(),
-		Address:         sr.Address.String(),
-		IsBound:         (manufacturerData.Data[0] & 0x80) != 0,
-		ProtocolVersion: manufacturerData.Data[1],
-		UUID:            decrypted,
-		RSSI:            sr.RSSI,
-	}
-
-	dm.deviceCache[sr.Address.String()] = device
-
-	return device, nil
 }

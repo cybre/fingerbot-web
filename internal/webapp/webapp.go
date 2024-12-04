@@ -2,6 +2,7 @@ package webapp
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"html/template"
 	"io"
@@ -65,9 +66,14 @@ func (a *WebApp) handleDiscover(c echo.Context) error {
 
 	output := make(chan devices.DeviceView)
 	go func() {
-		if err := a.deviceManager.Discover(c.Request().Context(), output); err != nil {
+		ctx, cancel := context.WithTimeout(c.Request().Context(), 1*time.Minute)
+		defer cancel()
+
+		if err := a.deviceManager.Discover(ctx, output); err != nil {
 			panic(err)
 		}
+
+		close(output)
 	}()
 
 	for device := range output {
@@ -91,7 +97,16 @@ func (a *WebApp) handleDiscover(c echo.Context) error {
 		w.Flush()
 	}
 
-	return echo.NewHTTPError(http.StatusServiceUnavailable, "Unavailable")
+	event := Event{
+		Event: []byte("finished"),
+		Data:  []byte("Scan finished"),
+	}
+	if err := event.MarshalTo(w); err != nil {
+		return fmt.Errorf("failed to marshal event: %w", err)
+	}
+	w.Flush()
+
+	return nil
 }
 
 func (a *WebApp) handleConnectDevice(c echo.Context) error {

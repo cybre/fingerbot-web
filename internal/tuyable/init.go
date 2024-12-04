@@ -3,11 +3,14 @@ package tuyable
 import (
 	"fmt"
 
-	"tinygo.org/x/bluetooth"
+	"github.com/go-ble/ble"
+	"github.com/go-ble/ble/linux"
 )
 
 func init() {
-	if err := bluetooth.DefaultAdapter.Enable(); err != nil {
-		panic(fmt.Errorf("error enabling adapter: %w", err))
+	d, err := linux.NewDevice()
+	if err != nil {
+		panic(fmt.Errorf("error creating BLE device: %w", err))
 	}
+	ble.SetDefaultDevice(d)
 }
